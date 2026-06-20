@@ -7,7 +7,6 @@
 ---
 
 ## 📖 Table of Contents
-* [🎬 Pitch & Demo](#-pitch--demo)
 * [⚠️ The Problem](#️-the-problem)
 * [💡 The Solution](#-the-solution)
 * [✨ Key Features](#-key-features)
@@ -19,14 +18,6 @@
 
 ---
 
-## 🎬 Pitch & Demo
-
-**OrderHub** is a unified order intelligence ledger that pulls purchase histories, invoice files, and return windows from multiple e-commerce platforms (Amazon, Flipkart, Zepto) and combines them into a single, secure, and beautiful Neo-Brutalist dashboard.
-
-> **Project Title**: OrderHub  
-> **Tagline**: All your orders, receipts, and returns in one ledger.
-
----
 
 ## ⚠️ The Problem
 * **Fragmented Purchases**: Checking what you ordered requires logging into 3+ different apps or checking cluttered email inboxes.
