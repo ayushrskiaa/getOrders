@@ -3,46 +3,17 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-enum Platform {
-  AMAZON
-  FLIPKART
-  ZEPTO
-}
-
-enum AccountStatus {
-  CONNECTED
-  NEEDS_LOGIN
-  FAILED
-}
-
-enum SyncStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-  NEEDS_LOGIN
-}
-
-enum Category {
-  GROCERIES
-  ELECTRONICS
-  FASHION
-  HOUSEHOLD
-  FOOD
-  SUBSCRIPTIONS
-  OTHER
-}
-
 model User {
-  id        String   @id
-  email     String?  @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   accounts ConnectedAccount[]
   jobs     SyncJob[]
@@ -52,12 +23,12 @@ model User {
 model ConnectedAccount {
   id              String        @id @default(cuid())
   userId          String
-  platform        Platform
-  status          AccountStatus @default(CONNECTED)
+  platform        String
+  status          String        @default("CONNECTED")
   anakinSessionId String
   displayName     String?
   lastSyncedAt    DateTime?
-  lastError        String?
+  lastError       String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -71,8 +42,8 @@ model SyncJob {
   id          String     @id @default(cuid())
   userId      String
   accountId   String
-  platform    Platform
-  status      SyncStatus @default(PENDING)
+  platform    String
+  status      String     @default("PENDING")
   ordersFound Int        @default(0)
   recordingUrl String?
   error       String?
@@ -87,16 +58,16 @@ model SyncJob {
 model Order {
   id             String   @id @default(cuid())
   userId         String
-  platform       Platform
+  platform       String
   externalOrderId String
   orderedAt      DateTime
-  totalAmount    Decimal  @db.Decimal(12, 2)
+  totalAmount    Decimal
   currency       String   @default("INR")
   status         String
-  category       Category @default(OTHER)
+  category       String   @default("OTHER")
   invoiceUrl     String?
   returnBy       DateTime?
-  raw            Json
+  raw            String
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -112,10 +83,10 @@ model OrderItem {
   orderId     String
   name        String
   quantity    Int      @default(1)
-  unitPrice   Decimal  @db.Decimal(12, 2)
-  category    Category @default(OTHER)
+  unitPrice   Decimal
+  category    String   @default("OTHER")
   productUrl  String?
-  raw         Json?
+  raw         String?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
@@ -132,11 +103,11 @@ model Invoice {
 
 model ProductSnapshot {
   id          String   @id @default(cuid())
-  platform    Platform
+  platform    String
   productUrl  String
   title       String
-  price       Decimal? @db.Decimal(12, 2)
+  price       Decimal?
   rating      String?
-  raw         Json
+  raw         String
   capturedAt  DateTime @default(now())
 }

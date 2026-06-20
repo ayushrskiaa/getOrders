@@ -5,3 +5,6 @@ node_modules
 coverage
 dist
 *.tsbuildinfo
+*.db
+*.db-journal
+dev.db

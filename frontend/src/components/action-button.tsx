@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { apiUrl } from "@/lib/api";
+import { authFetch } from "@/lib/auth";
 import type { Platform } from "@/lib/platform";
 
 type ActionButtonProps = {
@@ -24,7 +25,7 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
     async function connect() {
     setBusy(true);
     try {
-        const res = await fetch(apiUrl("/api/accounts/connect"), {
+        const res = await authFetch(apiUrl("/api/accounts/connect"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform })
@@ -52,11 +53,13 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
     }
   }
 
-  async function sync() {
+  const [selectedRange, setSelectedRange] = useState("lifetime");
+
+  async function sync(range: string = "lifetime") {
     if (!accountId) return;
     setBusy(true);
     try {
-      await fetch(apiUrl(`/api/accounts/${accountId}/sync`), { method: "POST" });
+      await authFetch(apiUrl(`/api/accounts/${accountId}/sync?range=${range}`), { method: "POST" });
       router.refresh();
     } finally {
       setBusy(false);
@@ -75,7 +78,7 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
 
     const interval = window.setInterval(async () => {
       try {
-        const response = await fetch(apiUrl("/api/accounts/connect"), {
+        const response = await authFetch(apiUrl("/api/accounts/connect"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ platform })
@@ -117,21 +120,52 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
 
   return (
     <>
-      <button
-        type="button"
-        onClick={canSync ? sync : connect}
-        disabled={busy}
-        className={clsx(
-          "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-semibold transition",
-          canSync
-            ? "border-ink bg-ink text-ledger hover:bg-coral"
-            : "border-line bg-receipt text-ink hover:border-ink",
-          busy && "cursor-wait opacity-60"
-        )}
-      >
-        {canSync ? <RefreshCw size={15} /> : <Cable size={15} />}
-        {busy ? "Working" : canSync ? "Sync orders" : status === "NEEDS_LOGIN" ? "Check session" : "Connect"}
-      </button>
+      {canSync ? (
+        <div className="flex flex-col gap-2 w-full">
+          <div className="flex flex-col gap-1">
+            <label className="font-mono text-[9px] uppercase tracking-wide text-ink/65 font-bold">Sync Range</label>
+            <select
+              value={selectedRange}
+              onChange={(e) => setSelectedRange(e.target.value)}
+              disabled={busy}
+              className="h-8 w-full rounded-md border border-line bg-receipt px-2 font-sans text-xs outline-none focus:border-ink font-semibold text-ink"
+            >
+              <option value="lifetime">Lifetime (Last 6 Years)</option>
+              <option value="3months">Last 3 Months</option>
+              <option value="2026">Year 2026</option>
+              <option value="2025">Year 2025</option>
+              <option value="2024">Year 2024</option>
+              <option value="2023">Year 2023</option>
+              <option value="2022">Year 2022</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => sync(selectedRange)}
+            disabled={busy}
+            className={clsx(
+              "inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition w-full border-ink bg-ink text-ledger hover:bg-coral",
+              busy && "cursor-wait opacity-60"
+            )}
+          >
+            <RefreshCw size={14} />
+            {busy ? "Syncing..." : "Sync orders"}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={connect}
+          disabled={busy}
+          className={clsx(
+            "inline-flex h-9 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold transition w-full border-line bg-receipt text-ink hover:border-ink",
+            busy && "cursor-wait opacity-60"
+          )}
+        >
+          <Cable size={14} />
+          {busy ? "Connecting..." : status === "NEEDS_LOGIN" ? "Check session" : "Connect"}
+        </button>
+      )}
 
       {showConnectModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/55 px-4 py-6 backdrop-blur-sm">

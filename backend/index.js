@@ -4,7 +4,40 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const cors = require("cors");
 const express = require("express");
 const OpenAI = require("openai");
-const { AccountStatus, Category, Platform, Prisma, PrismaClient, SyncStatus } = require("@prisma/client");
+const { Prisma, PrismaClient } = require("@prisma/client");
+
+const Platform = {
+  AMAZON: "AMAZON",
+  FLIPKART: "FLIPKART",
+  ZEPTO: "ZEPTO"
+};
+
+const Category = {
+  GROCERIES: "GROCERIES",
+  ELECTRONICS: "ELECTRONICS",
+  FASHION: "FASHION",
+  HOUSEHOLD: "HOUSEHOLD",
+  FOOD: "FOOD",
+  SUBSCRIPTIONS: "SUBSCRIPTIONS",
+  OTHER: "OTHER"
+};
+
+const AccountStatus = {
+  CONNECTED: "CONNECTED",
+  NEEDS_LOGIN: "NEEDS_LOGIN",
+  FAILED: "FAILED"
+};
+
+const SyncStatus = {
+  PENDING: "PENDING",
+  RUNNING: "RUNNING",
+  COMPLETED: "COMPLETED",
+  FAILED: "FAILED",
+  NEEDS_LOGIN: "NEEDS_LOGIN"
+};
+const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const JWT_SECRET = process.env.JWT_SECRET || "orderhub-super-secret-key-123456";
 
 const app = express();
 app.use(cors());
@@ -22,6 +55,47 @@ if (process.env.NODE_ENV !== "production") {
 
 const appUserId = process.env.DEMO_USER_ID || "demo-user";
 const anakinRestBase = getAnakinRestBaseUrl();
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedValue) {
+  if (!storedValue || !storedValue.includes(":")) return false;
+  const [salt, originalHash] = storedValue.split(":");
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, "sha512").toString("hex");
+  return hash === originalHash;
+}
+
+async function authenticateToken(req, res, next) {
+  let token = null;
+  const authHeader = req.headers["authorization"];
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.substring(7);
+  } else if (req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
+    return res.status(401).json({ error: "Access token is required" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.userId;
+
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) {
+      return res.status(401).json({ error: "User not found or deleted" });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(403).json({ error: "Invalid or expired token" });
+  }
+}
 
 const platformOrderUrls = {
   AMAZON: "https://www.amazon.in/gp/your-account/order-history",
@@ -49,26 +123,102 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/accounts", async (_req, res) => {
-  const user = await ensureAppUser();
-  const accounts = await prisma.connectedAccount.findMany({ where: { userId: user.id }, orderBy: { platform: "asc" } });
+// Auth Routes
+app.post("/api/auth/signup", async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (existingUser) {
+      return res.status(400).json({ error: "Email is already registered" });
+    }
+
+    const passwordHash = hashPassword(password);
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        passwordHash,
+        name: name || null
+      }
+    });
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "30d" });
+
+    res.status(201).json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "30d" });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/auth/me", authenticateToken, (req, res) => {
+  res.json({
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      name: req.user.name
+    }
+  });
+});
+
+// Authenticated Business Logic Routes
+app.get("/api/accounts", authenticateToken, async (req, res) => {
+  const accounts = await prisma.connectedAccount.findMany({ where: { userId: req.userId }, orderBy: { platform: "asc" } });
   res.json({ accounts: accounts.map(serializeAccount) });
 });
 
-app.post("/api/accounts/connect", async (req, res) => {
+app.post("/api/accounts/connect", authenticateToken, async (req, res) => {
   try {
     const platform = normalizePlatform(req.body?.platform);
     if (!platform) {
       return res.status(400).json({ error: "platform is required" });
     }
 
-    const user = await ensureAppUser();
-    const connection = await connectAnakinAccount(platform);
+    const connection = await connectAnakinAccount(req.userId, platform);
 
     const account = await prisma.connectedAccount.upsert({
-      where: { userId_platform: { userId: user.id, platform } },
+      where: { userId_platform: { userId: req.userId, platform } },
       create: {
-        userId: user.id,
+        userId: req.userId,
         platform,
         anakinSessionId: connection.sessionId,
         status: connection.status,
@@ -91,9 +241,13 @@ app.post("/api/accounts/connect", async (req, res) => {
   }
 });
 
-app.post("/api/accounts/:id/sync", async (req, res) => {
+app.post("/api/accounts/:id/sync", authenticateToken, async (req, res) => {
   try {
     const account = await prisma.connectedAccount.findUniqueOrThrow({ where: { id: req.params.id } });
+    if (account.userId !== req.userId) {
+      return res.status(403).json({ error: "Forbidden: Account does not belong to this user" });
+    }
+
     const job = await createSyncJob(account.id);
 
     await prisma.syncJob.update({
@@ -101,7 +255,8 @@ app.post("/api/accounts/:id/sync", async (req, res) => {
       data: { status: SyncStatus.RUNNING, startedAt: new Date() }
     });
 
-    const result = await syncOrdersFromAnakin(account.platform, account.anakinSessionId);
+    const range = req.query.range || "lifetime";
+    const result = await syncOrdersFromAnakin(account.platform, account.anakinSessionId, range);
     const ordersFound = await upsertExtractedOrders(account.userId, result.orders);
 
     await prisma.$transaction([
@@ -145,22 +300,22 @@ app.post("/api/accounts/:id/sync", async (req, res) => {
   }
 });
 
-app.get("/api/orders", async (req, res) => {
+app.get("/api/orders", authenticateToken, async (req, res) => {
   const platform = normalizeEnum(Platform, req.query.platform);
   const category = normalizeEnum(Category, req.query.category);
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const invoiceOnly = req.query.invoiceOnly === "true";
 
-  const orders = await getOrders({ platform, category, status, invoiceOnly });
+  const orders = await getOrders(req.userId, { platform, category, status, invoiceOnly });
   res.json({ orders: orders.map(serializeOrder) });
 });
 
-app.get("/api/analytics/summary", async (_req, res) => {
-  res.json(await getAnalyticsSummary());
+app.get("/api/analytics/summary", authenticateToken, async (req, res) => {
+  res.json(await getAnalyticsSummary(req.userId));
 });
 
-app.get("/api/export/orders.csv", async (_req, res) => {
-  const orders = await getOrders({});
+app.get("/api/export/orders.csv", authenticateToken, async (req, res) => {
+  const orders = await getOrders(req.userId, {});
   const header = ["Platform", "Order ID", "Date", "Status", "Category", "Total", "Currency", "Items", "Invoice URL"];
   const rows = orders.map((order) => [
     order.platform,
@@ -181,14 +336,14 @@ app.get("/api/export/orders.csv", async (_req, res) => {
   res.send(csv);
 });
 
-app.post("/api/ask", async (req, res) => {
+app.post("/api/ask", authenticateToken, async (req, res) => {
   try {
     const question = typeof req.body?.question === "string" ? req.body.question : "";
     if (question.trim().length < 3) {
       return res.status(400).json({ error: "question is required" });
     }
 
-    const answer = await answerOrderQuestion(question);
+    const answer = await answerOrderQuestion(req.userId, question);
     res.json({ answer });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown ask error";
@@ -233,7 +388,7 @@ async function upsertExtractedOrders(userId, orders) {
         category,
         invoiceUrl: extracted.invoiceUrl,
         returnBy: extracted.returnBy,
-        raw: sanitizeJson(extracted.raw ?? extracted),
+        raw: JSON.stringify(extracted.raw ?? extracted),
         items: {
           create: extracted.items.map((item) => ({
             name: item.name,
@@ -241,7 +396,7 @@ async function upsertExtractedOrders(userId, orders) {
             unitPrice: new Prisma.Decimal(item.unitPrice),
             category: item.category ?? inferCategory(item.name),
             productUrl: item.productUrl,
-            raw: sanitizeJson(item.raw ?? item)
+            raw: JSON.stringify(item.raw ?? item)
           }))
         },
         invoices: extracted.invoiceUrl ? { create: { url: extracted.invoiceUrl, label: `${extracted.platform} invoice` } } : undefined
@@ -254,7 +409,7 @@ async function upsertExtractedOrders(userId, orders) {
         category,
         invoiceUrl: extracted.invoiceUrl,
         returnBy: extracted.returnBy,
-        raw: sanitizeJson(extracted.raw ?? extracted),
+        raw: JSON.stringify(extracted.raw ?? extracted),
         items: {
           deleteMany: {},
           create: extracted.items.map((item) => ({
@@ -263,7 +418,7 @@ async function upsertExtractedOrders(userId, orders) {
             unitPrice: new Prisma.Decimal(item.unitPrice),
             category: item.category ?? inferCategory(item.name),
             productUrl: item.productUrl,
-            raw: sanitizeJson(item.raw ?? item)
+            raw: JSON.stringify(item.raw ?? item)
           }))
         },
         invoices: extracted.invoiceUrl
@@ -280,10 +435,10 @@ async function upsertExtractedOrders(userId, orders) {
   return count;
 }
 
-async function getOrders(filters) {
+async function getOrders(userId, filters) {
   return prisma.order.findMany({
     where: {
-      userId: appUserId,
+      userId: userId,
       platform: filters.platform,
       category: filters.category,
       status: filters.status,
@@ -307,9 +462,9 @@ async function createSyncJob(accountId) {
   });
 }
 
-async function getAnalyticsSummary() {
+async function getAnalyticsSummary(userId) {
   const orders = await prisma.order.findMany({
-    where: { userId: appUserId },
+    where: { userId: userId },
     include: { items: true },
     orderBy: { orderedAt: "desc" }
   });
@@ -356,13 +511,13 @@ async function getAnalyticsSummary() {
   };
 }
 
-async function connectAnakinAccount(platform) {
+async function connectAnakinAccount(userId, platform) {
   if (!hasAnakinKey()) {
     throw new Error("ANAKIN_API_KEY is required to connect an Anakin session.");
   }
 
   const sessions = await listAnakinSessions();
-  const matched = findPlatformSession(platform, sessions);
+  const matched = findPlatformSession(userId, platform, sessions);
 
   if (matched) {
     const sessionId = matched.id ?? matched.session_id ?? matched.name ?? matched.session_name;
@@ -379,7 +534,7 @@ async function connectAnakinAccount(platform) {
     };
   }
 
-  const sessionName = getDefaultSessionName(platform);
+  const sessionName = getDefaultSessionName(userId, platform);
 
   return {
     sessionId: sessionName,
@@ -389,23 +544,65 @@ async function connectAnakinAccount(platform) {
   };
 }
 
-async function syncOrdersFromAnakin(platform, sessionId) {
+async function syncOrdersFromAnakin(platform, sessionId, range = "lifetime") {
   if (!hasAnakinKey()) {
     throw new Error("ANAKIN_API_KEY is required to sync orders from Anakin.");
   }
 
-  const scrapeResult = await scrapeUrlWithAnakin(platformOrderUrls[platform], sessionId);
-  const sourceText = scrapeResult.markdown ?? stripHtml(scrapeResult.cleanedHtml ?? scrapeResult.html ?? "");
-
-  if (looksLikeLoginPage(sourceText, scrapeResult.html ?? "")) {
-    throw new Error("Saved Anakin session is not logged in. Recreate or refresh the saved session.");
+  let urls = [platformOrderUrls[platform]];
+  if (platform === "AMAZON") {
+    const currentYear = new Date().getFullYear();
+    if (range === "3months") {
+      urls = [`https://www.amazon.in/gp/your-account/order-history?orderFilter=months-3`];
+    } else if (range === "lifetime" || range === "all") {
+      urls = [];
+      for (let year = currentYear; year >= currentYear - 5; year--) {
+        urls.push(`https://www.amazon.in/gp/your-account/order-history?orderFilter=year-${year}`);
+      }
+    } else if (/^\d{4}$/.test(range)) {
+      urls = [`https://www.amazon.in/gp/your-account/order-history?orderFilter=year-${range}`];
+    }
   }
 
-  const orders = extractOrdersFromText(platform, sourceText, scrapeResult.html ?? "");
+  let allOrders = [];
+  let recordingUrl = undefined;
+
+  for (const url of urls) {
+    try {
+      console.log(`Scraping URL: ${url}`);
+      const scrapeResult = await scrapeUrlWithAnakin(url, sessionId);
+      const sourceText = scrapeResult.markdown ?? stripHtml(scrapeResult.cleanedHtml ?? scrapeResult.html ?? "");
+
+      if (looksLikeLoginPage(sourceText, scrapeResult.html ?? "")) {
+        throw new Error("Saved Anakin session is not logged in. Recreate or refresh the saved session.");
+      }
+
+      const orders = extractOrdersFromText(platform, sourceText, scrapeResult.html ?? "");
+      allOrders = allOrders.concat(orders);
+      if (scrapeResult.recordingUrl) {
+        recordingUrl = scrapeResult.recordingUrl;
+      }
+      
+      await delay(1000);
+    } catch (err) {
+      console.warn(`Failed to sync URL ${url}: ${err.message}`);
+      if (urls.length === 1 || err.message.includes("logged in")) {
+        throw err;
+      }
+    }
+  }
+
+  // Deduplicate orders by externalOrderId
+  const seenIds = new Set();
+  const uniqueOrders = allOrders.filter(order => {
+    if (seenIds.has(order.externalOrderId)) return false;
+    seenIds.add(order.externalOrderId);
+    return true;
+  });
 
   return {
-    orders,
-    recordingUrl: scrapeResult.recordingUrl
+    orders: uniqueOrders,
+    recordingUrl
   };
 }
 
@@ -423,19 +620,20 @@ async function listAnakinSessions() {
   return Array.isArray(data) ? data : data.sessions ?? [];
 }
 
-function findPlatformSession(platform, sessions) {
-  const expectedName = getDefaultSessionName(platform).toLowerCase();
+function findPlatformSession(userId, platform, sessions) {
+  const expectedName = getDefaultSessionName(userId, platform).toLowerCase();
+  const fallbackName = `orderhub-${platform.toLowerCase()}`;
   const domains = platformDomains[platform];
 
   return sessions.find((session) => {
     const name = `${session.name ?? ""} ${session.session_name ?? ""}`.toLowerCase();
     const url = `${session.url ?? ""} ${session.save_url ?? ""}`.toLowerCase();
-    return name.includes(expectedName) || domains.some((domain) => name.includes(domain) || url.includes(domain));
+    return name.includes(expectedName) || name.includes(fallbackName) || domains.some((domain) => name.includes(domain) || url.includes(domain));
   });
 }
 
-function getDefaultSessionName(platform) {
-  return `orderhub-${platform.toLowerCase()}`;
+function getDefaultSessionName(userId, platform) {
+  return `orderhub-${userId}-${platform.toLowerCase()}`;
 }
 
 function getAnakinRestBaseUrl() {
@@ -507,8 +705,8 @@ function serializeOrder(order) {
   };
 }
 
-async function answerOrderQuestion(question) {
-  const orders = await getOrders({});
+async function answerOrderQuestion(userId, question) {
+  const orders = await getOrders(userId, {});
   const compactOrders = orders.map((order) => ({
     platform: order.platform,
     date: order.orderedAt.toISOString().slice(0, 10),
@@ -638,34 +836,70 @@ function extractOrdersFromText(platform, text, html) {
   const blocks = splitIntoOrderBlocks(text, platform);
 
   return blocks.map((block, index) => {
-    const parsed = parseOrderBlock(block, html);
+    const parsed = parseOrderBlock(block, html, platform);
     return normalizeOrder(platform, parsed, index);
   });
 }
 
 function splitIntoOrderBlocks(text, platform) {
   const normalized = text.replace(/\r/g, "");
-  const markerPatterns = {
-    AMAZON: /(?:order\s*id|order details|delivery estimate|invoice|return by)/i,
-    FLIPKART: /(?:order id|delivery by|shipment|track order|invoice)/i,
-    ZEPTO: /(?:order id|delivered|invoice|items|delivery address)/i
-  };
-
-  const lines = normalized.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const markers = lines.filter((line) => markerPatterns[platform].test(line));
-
-  if (markers.length >= 2) {
-    return markers.map((line) => line);
+  
+  if (platform === "AMAZON") {
+    // Amazon orders typically start with "Order placed" or "Order #"
+    const blocks = normalized.split(/(?=Order placed|Order\s*#|Order\s*placed|ORDER\s*#\d)/i)
+      .map(b => b.trim())
+      .filter(b => b.length > 30 && (b.includes("Order") || b.includes("Total")));
+    if (blocks.length > 0) return blocks;
+  }
+  
+  if (platform === "FLIPKART") {
+    // Flipkart orders are usually separated by "OD" order ID
+    const blocks = normalized.split(/(?=OD\d{15})/i)
+      .map(b => b.trim())
+      .filter(b => b.length > 30);
+    if (blocks.length > 0) return blocks;
+  }
+  
+  if (platform === "ZEPTO") {
+    // Zepto orders are usually separated by "ZEP" order ID or "Order ID"
+    const blocks = normalized.split(/(?=Order\s*ID\s*:\s*ZEP|ZEP\d{10})/i)
+      .map(b => b.trim())
+      .filter(b => b.length > 30);
+    if (blocks.length > 0) return blocks;
   }
 
+  // Fallback lookahead regex split
   return normalized
     .split(/(?=\b(?:Order|OD|ZEP)[#:\s-]*[A-Z0-9-]{5,}\b)/i)
     .map((block) => block.trim())
     .filter((block) => block.length > 40);
 }
 
-function parseOrderBlock(block, html) {
-  const orderId = block.match(/(?:Order(?:\s*ID)?|OD|ZEP)[#:\s-]*([A-Z0-9-]{5,})/i)?.[1] ?? `ORDER-${Date.now()}`;
+function parseOrderBlock(block, html, platform) {
+  let orderId = null;
+  if (platform === "AMAZON") {
+    const match = block.match(/\b\d{3}-\d{7}-\d{7}\b/);
+    if (match) orderId = match[0];
+  } else if (platform === "FLIPKART") {
+    const match = block.match(/\bOD\d{15}\b/i);
+    if (match) orderId = match[0];
+  } else if (platform === "ZEPTO") {
+    const match = block.match(/\bZEP\d{10}\b/i);
+    if (match) orderId = match[0];
+  }
+
+  // Fallback to original regex but supporting backslash and excluding common words
+  if (!orderId) {
+    const fallbackMatch = block.match(/(?:Order(?:\s*ID)?|OD|ZEP)[\\#:\s-]*([A-Z0-9-]{5,})/i)?.[1];
+    if (fallbackMatch && !/placed|details|history|status/i.test(fallbackMatch)) {
+      orderId = fallbackMatch;
+    }
+  }
+
+  if (!orderId) {
+    orderId = `ORDER-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  }
+
   const amount = block.match(/(?:₹|Rs\.?)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i)?.[1] ?? "0";
   const dates = block.match(/\b(?:\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4})\b/gi) ?? [];
   const title =
@@ -742,38 +976,27 @@ function stripHtml(html) {
 
 function looksLikeLoginPage(text, html) {
   const haystack = `${text} ${html}`.toLowerCase();
-  return (
-    haystack.includes("sign in") ||
-    haystack.includes("log in") ||
-    haystack.includes("enter mobile number") ||
-    haystack.includes("verify your account") ||
-    haystack.includes("login")
-  );
+  
+  // Specific indicators of Amazon Sign-In pages (such as email input, password input, sign-in submit button)
+  const isAmazonLogin = 
+    html.includes('id="ap_email"') || 
+    html.includes('id="ap_password"') || 
+    html.includes('id="signInSubmit"') || 
+    html.includes('createAccountSubmit') ||
+    haystack.includes("amazon sign-in");
+    
+  // Flipkart sign-in indicators
+  const isFlipkartLogin = 
+    (haystack.includes("login") && (html.includes("enter email/mobile number") || html.includes("otp")));
+    
+  // Zepto sign-in indicators  
+  const isZeptoLogin = 
+    haystack.includes("enter mobile number") && html.includes("otp");
+
+  return isAmazonLogin || isFlipkartLogin || isZeptoLogin;
 }
 
-function getAnakinHeaders() {
-  return {
-    "Content-Type": "application/json",
-    "X-API-Key": process.env.ANAKIN_API_KEY ?? ""
-  };
-}
 
-function hasAnakinKey() {
-  return Boolean(process.env.ANAKIN_API_KEY);
-}
-
-function getAnakinRestBaseUrl() {
-  const base = process.env.ANAKIN_API_BASE_URL ?? "https://api.anakin.io";
-  return base.endsWith("/v1") ? base : `${base.replace(/\/$/, "")}/v1`;
-}
-
-function normalizePlatform(value) {
-  return normalizeEnum(Platform, value);
-}
-
-function normalizeEnum(values, value) {
-  return Object.values(values).includes(value) ? value : undefined;
-}
 
 function sum(values) {
   return values.reduce((total, value) => total + value, 0);

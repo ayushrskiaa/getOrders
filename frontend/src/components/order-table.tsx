@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { apiUrl } from "@/lib/api";
 import { categoryLabel } from "@/lib/categories";
 import { formatInr } from "@/lib/money";
+import { getToken } from "@/lib/auth";
 
 type OrderRow = {
   id: string;
@@ -18,6 +19,8 @@ type OrderRow = {
 };
 
 export function OrderTable({ orders }: { orders: OrderRow[] }) {
+  const token = typeof window !== "undefined" ? (getToken() ?? "") : "";
+
   return (
     <section className="rounded-lg border border-line bg-receipt shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-5">
@@ -26,7 +29,7 @@ export function OrderTable({ orders }: { orders: OrderRow[] }) {
           <h2 className="mt-1 text-xl font-black">Unified timeline</h2>
         </div>
         <a
-          href={apiUrl("/api/export/orders.csv")}
+          href={apiUrl(`/api/export/orders.csv?token=${token}`)}
           className="inline-flex items-center gap-2 rounded-md border border-ink bg-ledger px-3 py-2 text-sm font-semibold hover:bg-mint/30"
         >
           <FileDown size={15} />

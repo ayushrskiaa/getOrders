@@ -3,6 +3,7 @@
 import { Send } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { apiUrl } from "@/lib/api";
+import { authFetch } from "@/lib/auth";
 
 const prompts = [
   "How much did I spend this month?",
@@ -20,7 +21,7 @@ export function AskPanel() {
     event.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch(apiUrl("/api/ask"), {
+      const response = await authFetch(apiUrl("/api/ask"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question })
