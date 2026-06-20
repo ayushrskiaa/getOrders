@@ -1,5 +1,6 @@
 import { ExternalLink, FileDown } from "lucide-react";
 import { format } from "date-fns";
+import { apiUrl } from "@/lib/api";
 import { categoryLabel } from "@/lib/categories";
 import { formatInr } from "@/lib/money";
 
@@ -25,7 +26,7 @@ export function OrderTable({ orders }: { orders: OrderRow[] }) {
           <h2 className="mt-1 text-xl font-black">Unified timeline</h2>
         </div>
         <a
-          href="/api/export/orders.csv"
+          href={apiUrl("/api/export/orders.csv")}
           className="inline-flex items-center gap-2 rounded-md border border-ink bg-ledger px-3 py-2 text-sm font-semibold hover:bg-mint/30"
         >
           <FileDown size={15} />

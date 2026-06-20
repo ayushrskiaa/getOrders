@@ -1,17 +1,16 @@
-import { Category } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { inferCategory } from "./categories";
 
 describe("inferCategory", () => {
   it("maps grocery-like items", () => {
-    expect(inferCategory("Milk and brown bread")).toBe(Category.GROCERIES);
+    expect(inferCategory("Milk and brown bread")).toBe("GROCERIES");
   });
 
   it("maps electronics-like items", () => {
-    expect(inferCategory("USB-C laptop charger")).toBe(Category.ELECTRONICS);
+    expect(inferCategory("USB-C laptop charger")).toBe("ELECTRONICS");
   });
 
   it("falls back to other", () => {
-    expect(inferCategory("mystery item")).toBe(Category.OTHER);
+    expect(inferCategory("mystery item")).toBe("OTHER");
   });
 });

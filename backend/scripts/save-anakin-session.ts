@@ -1,6 +1,10 @@
 import { chromium, type Browser, type Page } from "playwright-core";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import * as dotenv from "dotenv";
+import * as path from "path";
+
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
 const DEFAULT_SESSION_NAME = "orderhub-amazon";
 const DEFAULT_SAVE_URL = "https://www.amazon.in";

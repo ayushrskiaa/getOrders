@@ -1,14 +1,12 @@
-import { Category, Platform } from "@prisma/client";
 import { Activity, Boxes, CalendarClock, IndianRupee, PackageCheck, ShieldCheck } from "lucide-react";
 import { ActionButton } from "@/components/action-button";
 import { AskPanel } from "@/components/ask-panel";
 import { OrderTable } from "@/components/order-table";
-import { getAnalyticsSummary } from "@/lib/analytics";
 import { categoryLabel } from "@/lib/categories";
 import { formatInr } from "@/lib/money";
-import { ensureAppUser, getOrders } from "@/lib/orders";
-import { prisma } from "@/lib/prisma";
-import { getAppUserId } from "@/lib/user";
+import { apiUrl } from "@/lib/api";
+import { platforms, type Platform } from "@/lib/platform";
+import type { Category } from "@/lib/categories";
 
 export const dynamic = "force-dynamic";
 
@@ -19,29 +17,40 @@ const platformCopy: Record<Platform, { name: string; hint: string }> = {
 };
 
 export default async function Home() {
-  await ensureAppUser();
-  const userId = getAppUserId();
-  const [accounts, orders, summary] = await Promise.all([
-    prisma.connectedAccount.findMany({ where: { userId }, orderBy: { platform: "asc" } }),
-    getOrders({}),
-    getAnalyticsSummary()
+  const [accountsResponse, ordersResponse, summaryResponse] = await Promise.all([
+    fetch(apiUrl("/api/accounts"), { cache: "no-store" }),
+    fetch(apiUrl("/api/orders"), { cache: "no-store" }),
+    fetch(apiUrl("/api/analytics/summary"), { cache: "no-store" })
   ]);
+
+  const accountsData = (await accountsResponse.json()) as { accounts?: Array<{ id: string; platform: Platform; status: string; lastError?: string | null; lastSyncedAt?: string | null }> };
+  const ordersData = (await ordersResponse.json()) as { orders?: Array<{ id: string; platform: Platform; externalOrderId: string; orderedAt: string; totalAmount: number; status: string; category: Category; invoiceUrl: string | null; returnBy: string | null; items: { name: string; quantity: number }[] }> };
+  const summary = (await summaryResponse.json()) as {
+    totalOrders: number;
+    totalSpend: number;
+    monthSpend: number;
+    byCategory: Record<string, number>;
+    upcomingReturns: number;
+  };
+
+  const accounts = accountsData.accounts ?? [];
+  const orders = ordersData.orders ?? [];
 
   const serializableOrders = orders.map((order) => ({
     id: order.id,
     platform: platformCopy[order.platform].name,
     externalOrderId: order.externalOrderId,
-    orderedAt: order.orderedAt.toISOString(),
+    orderedAt: order.orderedAt,
     totalAmount: Number(order.totalAmount),
     status: order.status,
     category: order.category,
     invoiceUrl: order.invoiceUrl,
-    returnBy: order.returnBy?.toISOString() ?? null,
+    returnBy: order.returnBy,
     items: order.items.map((item) => ({ name: item.name, quantity: item.quantity }))
   }));
 
   const bestCategory = Object.entries(summary.byCategory)
-    .filter(([category]) => category !== Category.OTHER)
+    .filter(([category]) => category !== "OTHER")
     .sort(([, amountA], [, amountB]) => amountB - amountA)[0];
 
   return (
@@ -88,7 +97,7 @@ export default async function Home() {
               <Activity size={20} />
             </div>
             <div className="grid gap-3 md:grid-cols-3">
-              {Object.values(Platform).map((platform) => {
+              {platforms.map((platform) => {
                 const account = accounts.find((item) => item.platform === platform);
                 return (
                   <div key={platform} className="rounded-lg border border-line bg-ledger p-4">
@@ -107,7 +116,7 @@ export default async function Home() {
                     {account?.lastError ? <p className="mt-3 text-xs leading-5 text-coral">{account.lastError}</p> : null}
                     {account?.lastSyncedAt ? (
                       <p className="mt-3 text-xs text-ink/60">
-                        Last sync {account.lastSyncedAt.toLocaleDateString("en-IN")}
+                        Last sync {new Date(account.lastSyncedAt).toLocaleDateString("en-IN")}
                       </p>
                     ) : null}
                   </div>

@@ -1,10 +1,11 @@
 "use client";
 
-import { Platform } from "@prisma/client";
 import { Cable, CheckCircle2, ExternalLink, Loader2, RefreshCw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { apiUrl } from "@/lib/api";
+import type { Platform } from "@/lib/platform";
 
 type ActionButtonProps = {
   accountId?: string;
@@ -20,10 +21,10 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
   const [polling, setPolling] = useState(false);
   const [pollAttempt, setPollAttempt] = useState(0);
 
-  async function connect() {
+    async function connect() {
     setBusy(true);
     try {
-      const res = await fetch("/api/accounts/connect", {
+        const res = await fetch(apiUrl("/api/accounts/connect"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platform })
@@ -55,7 +56,7 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
     if (!accountId) return;
     setBusy(true);
     try {
-      await fetch(`/api/accounts/${accountId}/sync`, { method: "POST" });
+      await fetch(apiUrl(`/api/accounts/${accountId}/sync`), { method: "POST" });
       router.refresh();
     } finally {
       setBusy(false);
@@ -74,7 +75,7 @@ export function ActionButton({ accountId, platform, status }: ActionButtonProps)
 
     const interval = window.setInterval(async () => {
       try {
-        const response = await fetch("/api/accounts/connect", {
+        const response = await fetch(apiUrl("/api/accounts/connect"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ platform })

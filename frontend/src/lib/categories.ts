@@ -1,4 +1,6 @@
-import { Category } from "@prisma/client";
+export const categories = ["GROCERIES", "ELECTRONICS", "FASHION", "HOUSEHOLD", "FOOD", "SUBSCRIPTIONS", "OTHER"] as const;
+
+export type Category = (typeof categories)[number];
 
 const categoryKeywords: Record<Category, string[]> = {
   GROCERIES: ["milk", "egg", "bread", "coffee", "rice", "paneer", "banana", "grocery", "vegetable"],
@@ -14,12 +16,12 @@ export function inferCategory(text: string): Category {
   const normalized = text.toLowerCase();
 
   for (const [category, keywords] of Object.entries(categoryKeywords) as [Category, string[]][]) {
-    if (category !== Category.OTHER && keywords.some((keyword) => normalized.includes(keyword))) {
+    if (category !== "OTHER" && keywords.some((keyword) => normalized.includes(keyword))) {
       return category;
     }
   }
 
-  return Category.OTHER;
+  return "OTHER";
 }
 
 export function categoryLabel(category: Category) {
