@@ -1,53 +1,114 @@
-# OrderHub Monorepo
+# 🛒 OrderHub
 
-OrderHub is a unified order intelligence ledger that synchronizes your receipts, orders, and returns from major e-commerce platforms (Amazon, Flipkart, Zepto) using Anakin's CDP browser automation and displays them in a modern Neo-Brutalist dashboard.
+### *One ledger to rule all your orders, receipts, and returns.*
 
-This repository is organized as a clean monorepo:
-* [/frontend](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/frontend) - Next.js UI dashboard with Client-Side JWT Route Security.
-* [/backend](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/backend) - Express API Backend, local SQLite Database, and automated CDP session saver.
+🚀 **Submission for the Anakin Hackathon**
 
 ---
 
-## 🛠️ Key Architectural Enhancements
-
-1. **Zero-Dependency Database (SQLite)**: Switched the Prisma data layer from PostgreSQL to a local SQLite instance (`dev.db`), removing any local Docker requirements. Handled native JSON and Enum limitations via string serialization in the application code.
-2. **Secure Multi-User Auth (JWT + PBKDF2)**: Implemented complete user isolation. Signup, Login, and Profile endpoints secure the Express API. Passwords are securely hashed using Node's native `crypto` module (PBKDF2 with custom salts).
-3. **Anakin Session Isolation**: Anakin browser sessions are isolated per user as `orderhub-<userId>-<platform>`. A fallback matches generic `orderhub-<platform>` sessions for ease of testing.
-4. **Flexible Sync Range**: Select between **Lifetime (Last 6 Years)**, **Last 3 Months**, or **specific calendar years** directly from the UI connection card.
-5. **Port Clash Prevention**: Shifted the backend API server port to `3001` (to prevent collision with Docker backend services on `3000`/`4000`).
+## 📖 Table of Contents
+* [🎬 Pitch & Demo](#-pitch--demo)
+* [⚠️ The Problem](#️-the-problem)
+* [💡 The Solution](#-the-solution)
+* [✨ Key Features](#-key-features)
+* [🧬 System Architecture](#-system-architecture)
+* [🛠️ Tech Stack](#️-tech-stack)
+* [🚀 Getting Started](#-getting-started)
+* [🔑 Anakin CDP Integration](#-anakin-cdp-integration)
+* [🔮 Future Roadmap](#-future-roadmap)
 
 ---
 
-## 🚀 Local Development Setup
+## 🎬 Pitch & Demo
 
-### 1. Database Initialization
-Ensure database dependencies are generated and the local database is migrated:
+**OrderHub** is a unified order intelligence ledger that pulls purchase histories, invoice files, and return windows from multiple e-commerce platforms (Amazon, Flipkart, Zepto) and combines them into a single, secure, and beautiful Neo-Brutalist dashboard.
+
+> **Project Title**: OrderHub  
+> **Tagline**: All your orders, receipts, and returns in one ledger.
+
+---
+
+## ⚠️ The Problem
+* **Fragmented Purchases**: Checking what you ordered requires logging into 3+ different apps or checking cluttered email inboxes.
+* **Return Window Disasters**: Missing return deadlines because dates are hidden deep inside order history detail pages.
+* **Accounting Nightmares**: Searching for scattered invoices and PDF downloads during tax filing or expense reports.
+* **Session Collisions**: Multi-user tools clash when attempting to scrape accounts simultaneously using generic browser identifiers.
+
+---
+
+## 💡 The Solution
+OrderHub acts as your read-only order ledger. By connecting your e-commerce accounts securely through **Anakin CDP (Chrome DevTools Protocol) browser sessions**, it automates login validation and scrapes purchase details safely.
+
+All transactions, invoices, items, and return dates are structured, categorized, and queryable in one localized ledger dashboard.
+
+---
+
+## ✨ Key Features
+
+* **🛡️ Secure Multi-User Auth**: True user isolation. Signup, login, and profile fetching powered by native PBKDF2 password hashing and JWT validation.
+* **👥 Isolated User Sessions**: Saved Anakin sessions are uniquely named `orderhub-<userId>-<platform>`, allowing multiple users to sync their accounts simultaneously without clashing.
+* **📅 Custom Sync Ranges**: Sync your **Last 3 Months**, **Specific Calendar Years**, or your entire **Lifetime History (Last 6 Years)** at the click of a button.
+* **📊 Brutalist Dashboard & Analytics**: Dynamic category mixtures, metric tracking, return notifications, and beautiful animated neo-brutalist charts.
+* **💬 AI Ledger Assistant**: Ask questions like *"How much did I spend on groceries this month?"* or *"Show my Flipkart electronics orders"* and get instant summaries.
+* **📥 CSV Export**: Single-click downloads of your entire unified order history database, pre-authorized using tokenized query strings.
+
+---
+
+## 🧬 System Architecture
+
+```mermaid
+graph TD
+    User[Client Browser] -->|Next.js UI| Frontend[Frontend React Server]
+    Frontend -->|JWT Auth Fetch| Backend[Express API Server]
+    Backend -->|Native crypto / PBKDF2| Auth[Authentication Layer]
+    Backend -->|Prisma Client| DB[(SQLite Database)]
+    Backend -->|CDP Connect| Anakin[Anakin API Cloud]
+    Anakin -->|Automated Browser Session| Amazon[Amazon / Flipkart / Zepto]
+    Backend -->|Prompt Context| OpenAI[OpenAI GPT-4o-mini API]
+```
+
+---
+
+## 🛠️ Tech Stack
+
+* **Frontend**: Next.js 14 (App Router), TailwindCSS (Custom Brutalist Theme), Lucide Icons.
+* **Backend**: Node.js, Express, JWT (`jsonwebtoken`), Native Crypto.
+* **Database & ORM**: Prisma ORM, SQLite (Zero-docker local configuration).
+* **Browser Automation**: Anakin API (`url-scraper` & CDP browser endpoints), Playwright-Core.
+* **Artificial Intelligence**: OpenAI GPT-4o-mini.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Database Setup
+Set up the Prisma Client and initialize the SQLite database locally:
 ```bash
 cd backend
 npm run prisma:generate
 npm run prisma:push
 ```
 
-### 2. Environment Configurations
-Configure the local environment variables.
+### 2. Configure Environment Variables
+Create the subfolder environmental files.
 
-Create [/backend/.env](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/backend/.env):
+**Backend Env File ([/backend/.env](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/backend/.env)):**
 ```env
 DATABASE_URL="file:./dev.db"
-ANAKIN_API_KEY="your_anakin_api_key"
+ANAKIN_API_KEY="your_api_key_here"
 ANAKIN_API_BASE_URL="https://api.anakin.io"
-OPENAI_API_KEY="optional_openai_key_for_ai_chat"
+OPENAI_API_KEY="optional_openai_key"
 PORT=3001
-AMAZON_EMAIL="your_amazon_email_for_automation"
-AMAZON_PASSWORD="your_amazon_password_for_automation"
+AMAZON_EMAIL="your_amazon_email_for_CDP"
+AMAZON_PASSWORD="your_amazon_password_for_CDP"
 ```
 
-Create [/frontend/.env.local](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/frontend/.env.local):
+**Frontend Env File ([/frontend/.env.local](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/frontend/.env.local)):**
 ```env
 NEXT_PUBLIC_API_URL="http://localhost:3001"
 ```
 
-### 3. Run the Servers
+### 3. Run Development Servers
 Open two terminal tabs:
 
 **Start Backend (Port 3001):**
@@ -62,36 +123,28 @@ cd frontend
 npm run dev
 ```
 
-Visit `http://localhost:3000` to register an account and view the dashboard!
+Navigate to `http://localhost:3000` to register your account!
 
 ---
 
-## 🔑 Saving Anakin Browser Sessions
-To allow the backend to sync orders, Anakin needs an active logged-in browser session. Run the automated CDP login script from the `backend` directory:
+## 🔑 Anakin CDP Integration
+
+### 1. Creating the Session
+The tool includes a script to open a remote browser window inside Anakin, navigate to Amazon, and log in to save the browser cookies:
 ```bash
 cd backend
 npm run save:amazon-session
 ```
-* The script connects to the Anakin remote browser, opens Amazon Sign-In, and auto-fills your `.env` credentials.
-* Complete any OTP/CAPTCHA challenges in the browser window, then press `Enter` in the terminal to save your session.
+The script reads your `.env` credentials, navigates to Amazon, auto-fills login steps, and keeps the browser session alive until you complete any OTP verification. On browser disconnect, cookies are securely saved.
+
+### 2. Extracting Purchase Data
+The backend makes a headless scraping call to retrieve the order history page structure.
+* Segments blocks cleanly using boundary conditions in [splitIntoOrderBlocks](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/backend/index.js#L800).
+* Parses order metadata, item names, pricing, and invoices in [parseOrderBlock](file:///C:/Users/ayush/Desktop/coding/Hackathon/Anakin/backend/index.js#L821).
 
 ---
 
-## 🌐 Deployment Guidelines
-
-### Backend Deployment (e.g., Render, Railway, or VPS)
-1. Set the build command: `npm run prisma:generate`
-2. Set the start command: `node index.js` (or `npm start`)
-3. Expose the server port (default `3001`).
-4. Configure these Environment Variables in your host dashboard:
-   * `DATABASE_URL` (For persistent cloud hosting, configure a PostgreSQL database URL and update the `provider` in `schema.prisma` to `postgresql`).
-   * `ANAKIN_API_KEY` (Required)
-   * `ANAKIN_API_BASE_URL` (Required)
-   * `JWT_SECRET` (Define a secure string to sign user sessions)
-   * `OPENAI_API_KEY` (Optional)
-
-### Frontend Deployment (e.g., Vercel or Netlify)
-1. Deploy the Next.js code located inside `/frontend`.
-2. Vercel will automatically detect the Next.js setup.
-3. Configure the following Environment Variable in your Vercel project:
-   * `NEXT_PUBLIC_API_URL`: Point this to your live **Backend API URL** (e.g., `https://your-backend.railway.app`).
+## 🔮 Future Roadmap
+* **Auto-refresh Cron**: Run recurring cron jobs to pull order updates in the background.
+* **Mailbox Scraper Integration**: Sync offline receipts from email inboxes using IMAP/Gmail API.
+* **Shared Ledgers**: Allow family members to share ledger profiles and track combined household expenses.
